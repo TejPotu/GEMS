@@ -1,0 +1,17 @@
+# Minimal 1-step CPU smoke configuration (overrides applied at the experiment level).
+objectives: [masked_peak]
+mask_prob: 0.15
+mask_mz: true
+mask_intensity: false
+predict: defect
+batch_size: 1
+optim:
+  lr: 3.0e-4
+  warmup: 0
+  weight_decay: 0.0
+trainer:
+  accelerator: cpu
+  devices: 1
+  precision: 32
+  max_steps: 1
+  log_every_n_steps: 1

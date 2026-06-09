@@ -1,0 +1,4 @@
+strategy: assigned_formula
+n_peaks: 256
+# Uses pyc2mc attribution; introduces assignment bias -> treat as an ablation arm, not the default.
+elements: ["C", "H", "O", "N", "S"]

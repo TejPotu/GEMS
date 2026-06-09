@@ -1,0 +1,14 @@
+# Whole-spectrum sample classification (petroleum / DOM / PFAS / lipid ...).
+head: sample_classification
+backbone_ckpt: null            # path to a pretrained GEMS checkpoint
+unfreeze_backbone_at_epoch: -1 # -1 keeps the backbone frozen
+use_pooled: true
+labels_csv: null               # CSV mapping .pks stem -> class label (to be created)
+batch_size: 8
+optim:
+  lr: 1.0e-3
+  weight_decay: 0.01
+trainer:
+  accelerator: cpu
+  devices: 1
+  max_epochs: 50

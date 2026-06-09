@@ -1,0 +1,13 @@
+# Tiny CPU development corpus.
+pks_dir: data/walking_calibrated_pks
+mds_dir: data/mds_csv
+manifest: data/mds_run_manifest.csv
+processed_dir: data/processed
+limit: 8                 # only load a handful of spectra for fast dev iteration
+max_peaks: 256
+max_mz: 1500.0
+log_intensity: true
+splits:
+  scheme: random        # random | held_out_instrument | held_out_class
+  val_frac: 0.2
+  seed: 0

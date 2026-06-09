@@ -1,0 +1,23 @@
+# Phase 3: masked-peak + masked-intensity + contrastive invariance.
+objectives: [masked_peak, masked_intensity, contrastive]
+mask_prob: 0.15
+mask_mz: true
+mask_intensity: true
+predict: both
+contrastive:
+  temperature: 0.1
+  augment:
+    subsample_frac: 0.8
+    intensity_jitter_sigma: 0.1
+    calibration_drift_ppm: 0.5
+batch_size: 8
+optim:
+  lr: 3.0e-4
+  warmup: 500
+  weight_decay: 0.01
+trainer:
+  accelerator: gpu
+  devices: 1
+  precision: bf16-mixed
+  max_steps: 100000
+  log_every_n_steps: 50

@@ -1,0 +1,8 @@
+# Phase 2: sparse attention restricted to building-block-linked peak pairs.
+variant: sparse_mask
+ppm_tol: 1.0
+include_c13: true
+allow_self: true
+vocab:
+  source: seeded
+  top_k: 128

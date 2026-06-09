@@ -1,0 +1,3 @@
+strategy: series_anchor
+n_peaks: 256
+base: "C H2"       # Kendrick base for series detection (pyc2mc formula-string syntax)

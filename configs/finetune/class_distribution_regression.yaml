@@ -1,0 +1,14 @@
+# Whole-sample heteroatom-class-distribution regression (the harder stress test of Δm attention).
+head: class_distribution_regression
+backbone_ckpt: null
+unfreeze_backbone_at_epoch: 5
+use_pooled: true
+labels_csv: null               # CSV mapping .pks stem -> class-distribution vector (from pyc2mc assignment)
+batch_size: 8
+optim:
+  lr: 1.0e-3
+  weight_decay: 0.01
+trainer:
+  accelerator: cpu
+  devices: 1
+  max_epochs: 100

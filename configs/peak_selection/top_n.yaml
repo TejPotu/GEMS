@@ -1,0 +1,2 @@
+strategy: top_n
+n_peaks: 256        # cap on tokens fed into O(n^2) attention

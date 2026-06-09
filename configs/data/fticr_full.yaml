@@ -1,0 +1,13 @@
+# Full corpus (scale-up).
+pks_dir: data/walking_calibrated_pks
+mds_dir: data/mds_csv
+manifest: data/mds_run_manifest.csv
+processed_dir: data/processed
+limit: null
+max_peaks: 2048
+max_mz: 1500.0
+log_intensity: true
+splits:
+  scheme: held_out_instrument
+  val_frac: 0.15
+  seed: 0

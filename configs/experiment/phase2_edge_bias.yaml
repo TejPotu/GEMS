@@ -1,0 +1,13 @@
+# Phase 2 — the thesis claim: add Graphormer-style mass-difference edge bias.
+# Identical to phase1_baseline EXCEPT `attention: edge_bias`. The Phase 1 -> 2 ablation is this flag.
+defaults:
+  - data: fticr_dev
+  - model: tiny
+  - attention: edge_bias
+  - peak_selection: top_n
+  - pretrain: masked_peak
+
+phase: 2
+seed: 0
+device: cpu
+run_name: phase2_edge_bias
