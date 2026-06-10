@@ -2,7 +2,8 @@
 
 Experiment configs compose sub-configs (data/model/attention/peak_selection/pretrain) through a
 ``defaults:`` list, mirroring a lightweight Hydra-style layout. ``load_config`` resolves that
-composition; ``validate_config`` enforces cross-field consistency (e.g. edge_bias requires a vocab).
+composition; ``validate_config`` enforces cross-field consistency (e.g. the ``graph`` attention
+variant requires a vocab).
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ def load_config(path: str | Path, overrides: list[str] | None = None) -> DictCon
     """Load an experiment config, resolving its ``defaults:`` sub-configs and CLI overrides. [CONCRETE]
 
     Args:
-        path: path to an experiment YAML (e.g. ``configs/experiment/phase1_baseline.yaml``).
+        path: path to an experiment YAML (e.g. ``configs/experiment/gems_pretrain.yaml``).
         overrides: optional dotlist overrides, e.g. ``["model.dim=32", "pretrain.batch_size=1"]``.
 
     Returns:
@@ -47,8 +48,8 @@ def load_config(path: str | Path, overrides: list[str] | None = None) -> DictCon
 def validate_config(cfg: DictConfig) -> None:
     """Check cross-field consistency before a run. [STUB]
 
-    Intended checks: ``attention.variant == 'edge_bias'`` ⇒ a vocab source is configured;
-    ``phase`` matches the chosen attention variant; ``peak_selection.n_peaks <= model max``; device
-    is one of cpu/mps/cuda. TODO.
+    Intended checks: a biased ``attention.variant`` (``graph`` / ``dense_edge_bias``) ⇒ a vocab
+    source is configured; ``peak_selection.strategy == 'graph_induced'`` ⇒ a vocab is available;
+    ``peak_selection.n_peaks <= model max``; device is one of cpu/mps/cuda. TODO.
     """
     raise NotImplementedError("validate_config is a stub.")

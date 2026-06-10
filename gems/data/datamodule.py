@@ -1,8 +1,9 @@
 """Lightning DataModules + collation for pretraining and fine-tuning. [STUB]
 
 Mirrors DreaMS's DataModule pattern: ``setup`` builds train/val datasets from an :class:`MSData`
-corpus, ``*_dataloader`` wrap them, and ``collate_spectra`` pads a batch and (for Phase 2) attaches
-the per-spectrum Δm edges consumed by the attention bias.
+corpus, ``*_dataloader`` wrap them, and ``collate_spectra`` pads a batch and attaches the per-spectrum
+Δm edges consumed by the attention bias — with the ``[masked-edge]`` leakage guard applied for the
+peaks the denoising corruption masked.
 """
 
 from __future__ import annotations
@@ -15,7 +16,9 @@ def collate_spectra(batch: list[dict]) -> dict:
     """Collate variable-content spectrum dicts into a padded batch. [STUB]
 
     Intended: stack ``mz``/``intensity``, build a key-padding mask, and (when a Δm vocabulary is
-    attached) attach ``DeltaEdges`` per spectrum for the attention bias.
+    attached) attach the per-spectrum ``DeltaEdges`` for the attention bias — calling
+    ``DeltaEdges.with_masked_edges(masked_nodes, vocab.masked_edge_index)`` so masked peaks' incident
+    edges are stripped to the ``[masked-edge]`` sentinel (the leakage guard).
     """
     raise NotImplementedError("collate_spectra is a stub.")
 
@@ -33,8 +36,8 @@ class PretrainDataModule(pl.LightningDataModule):
 
     def setup(self, stage: str | None = None) -> None:
         raise NotImplementedError(
-            "PretrainDataModule.setup is a stub: build MSData → torch dataset → MaskedPeakDataset, "
-            "then split into train/val."
+            "PretrainDataModule.setup is a stub: build MSData → torch dataset → "
+            "SpectrumDenoisingDataset, then split into train/val."
         )
 
     def train_dataloader(self) -> DataLoader:

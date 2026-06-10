@@ -15,7 +15,7 @@ def pretrain(config: str, overrides: list[str] | None = None):
 
     Wiring (to implement):
         cfg = load_config(config, overrides)
-        vocab = DeltaVocabulary.from_seeds(...) or build_vocabulary_from_corpus(...)   # for edge_bias
+        vocab = DeltaVocabulary.from_seeds(...) or build_vocabulary_from_corpus(...)   # for graph attention
         dm = PretrainDataModule(cfg)
         model = GEMS(cfg, vocab=vocab)
         trainer = pl.Trainer(accelerator=cfg.device, devices=..., max_steps=cfg.pretrain.trainer.max_steps, ...)

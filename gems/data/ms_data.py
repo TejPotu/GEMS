@@ -60,5 +60,5 @@ class MSData:
         raise NotImplementedError("MSData.to_torch_dataset is a stub.")
 
     def attach_delta_vocab(self, vocab) -> None:
-        """Attach a :class:`~gems.vocab.building_blocks.DeltaVocabulary` for Δm-graph building. [STUB]"""
+        """Attach a :class:`~gems.vocab.vocabulary.DeltaVocabulary` for Δm-graph building. [STUB]"""
         raise NotImplementedError("MSData.attach_delta_vocab is a stub.")

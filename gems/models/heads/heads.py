@@ -73,3 +73,20 @@ class CrossSampleSimilarityHead(FineTuningHead):
 
 class VanKrevelenRegionHead(FineTuningHead):
     """Predict van Krevelen (O/C, H/C) region occupancy from the embedding. [STUB]"""
+
+
+class EdgeTypeProbeHead(FineTuningHead):
+    """Δm / edge-type prediction as an *interpretability probe*, not a pre-training objective. [STUB]
+
+    Given two peak embeddings, name the building block linking them (e.g. confirm CF2 is learned).
+    As an objective it is trivial when masses are visible (it collapses into masked-m/z), so per
+    BUILD_PLAN Part D it lives here, on the pretrained encoder.
+    """
+
+
+class ElutionOrderHead(FineTuningHead):
+    """Predict LC-elution order across fractions — LC-FT-ICR only (BUILD_PLAN Part D). [STUB]
+
+    Optional, never part of base pre-training: from two pooled ``z`` predict fraction order. Only
+    applicable where fraction/elution metadata exists.
+    """

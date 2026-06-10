@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from gems.vocab.building_blocks import DeltaVocabulary, seed_vocabulary
+from gems.vocab.vocabulary import DeltaVocabulary, seed_vocabulary
 
 
 def test_seed_vocabulary_nonempty():
@@ -25,3 +25,13 @@ def test_json_roundtrip(tmp_path):
     v2 = DeltaVocabulary.from_json(p)
     assert v2.masses == v.masses
     assert "C13" not in v2.masses
+
+
+def test_masked_edge_sentinel_reserves_a_row():
+    from gems.definitions import MASKED_EDGE_TOKEN
+
+    v = DeltaVocabulary.from_seeds()
+    # the sentinel occupies exactly one reserved row past the real blocks
+    assert v.masked_edge_index == len(v)
+    assert v.n_embeddings == len(v) + 1
+    assert v.index_of(MASKED_EDGE_TOKEN) == v.masked_edge_index

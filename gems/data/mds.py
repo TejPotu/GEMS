@@ -118,7 +118,8 @@ def filter_delta_distributions(
     Intended behavior: keep rows with ``r_squared >= min_r_squared`` and
     ``# occurrences >= min_occurrences``; optionally drop ``weird_shape``/``overlap`` flagged fits.
 
-    TODO: implement once vocabulary-building thresholds are chosen empirically (Phase 0).
+    TODO: implement once vocabulary-building thresholds are chosen empirically (the degree-distribution
+    measurement before graph build — see BUILD_PLAN Part C).
     """
     raise NotImplementedError(
         "filter_delta_distributions is a stub. Filter on "

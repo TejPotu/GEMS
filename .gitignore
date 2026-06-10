@@ -29,3 +29,6 @@ checkpoints/
 # Raw corpus (~965 MB) is NOT committed — kept local. data/README.md documents the layout.
 data/*
 !data/README.md
+*.html
+DreaMS_step_by_step.md
+

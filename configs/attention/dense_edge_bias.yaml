@@ -1,0 +1,11 @@
+# Reduced-N sanity check: dense Graphormer-style edge bias, NO sparsity. Not the primary path —
+# isolates "does the abundance-weighted bias help?" from "does the sparse Δm-graph help?".
+variant: dense_edge_bias
+n_heads: 2
+ppm_tol: 1.0
+degree_cap: 32
+include_c13: true
+use_abundance_weight: true
+vocab:
+  source: seeded
+  top_k: 128

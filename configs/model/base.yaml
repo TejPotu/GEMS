@@ -7,4 +7,4 @@ dropout: 0.1
 max_nominal: 2000
 use_fourier: true
 aux_features: []
-pooling: cls
+pooling: attention       # attention-pool readout (no CLS master node)

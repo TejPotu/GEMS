@@ -1,8 +1,18 @@
-"""Self-supervised masking + augmentations for FT-ICR spectra. [STUB]
+"""Spectrum-denoising corruption — the single shared corrupted view (BUILD_PLAN Part B). [STUB]
 
-Provides the dataset wrapper for masked-peak modeling (the workhorse SSL objective) and the
-augmentation primitives used by the contrastive objective. Adapted from DreaMS's masked-spectrum
-dataset, but masking targets here are the exact mass defect and/or intensity of FT-ICR peaks.
+The three repair channels (masked-m/z, masked-intensity, replaced-peak) share **one** corrupted view:
+different peaks get different corruptions, the encoder runs once, and per-peak heads repair each. This
+module builds that view and the per-channel targets, plus the masked-node mask the Δm-graph leakage
+guard consumes.
+
+Corruptions (disjoint subsets of a spectrum's peaks):
+  - **mask-m/z** (default 30%, sampled ∝ intensity; ~⅓ of masks are 2–3 *consecutive* homologous-
+    series members): blank the m/z (keep intensity), record nominal+defect targets.
+  - **mask-intensity** (separate subset): blank the intensity (keep m/z), record the intensity target.
+  - **replace** (default 15%): swap in a plausible-but-wrong m/z (non-vocabulary Δm, or a vocabulary Δm
+    that breaks defect consistency); keep intensity; label the peak fake.
+Edges incident to mask-m/z peaks are stripped to the ``[masked-edge]`` sentinel downstream (the graph
+sees ``masked_nodes``), so a typed edge can never reveal the masked mass.
 """
 
 from __future__ import annotations
@@ -10,59 +20,70 @@ from __future__ import annotations
 import numpy as np
 from torch.utils.data import Dataset
 
+from gems.definitions import (
+    DEFAULT_MASK_PROB,
+    REPLACED_PEAK_FRACTION,
+    SERIES_SPAN_FRACTION,
+)
 
-class MaskedPeakDataset(Dataset):
-    """Wrap a spectrum dataset and mask peaks for masked-peak modeling. [STUB]
 
-    BERT-style: select ``mask_prob`` of peaks; for each, mask its m/z and/or intensity (replace with
-    a sentinel) and record the original value as the reconstruction target. The model predicts the
-    masked peak's exact mass defect (and/or intensity) from its homologous-series neighbors.
+class SpectrumDenoisingDataset(Dataset):
+    """Wrap a spectrum dataset and emit one corrupted view + per-channel targets. [STUB]
+
+    Each item carries the corrupted ``mz``/``intensity``, the channel target masks/values, the
+    ``masked_nodes`` boolean (for the graph leakage guard), and the per-peak ``replaced_label``.
 
     Args:
         base: an underlying ``Dataset`` yielding fixed-size spectrum tensor dicts.
-        mask_prob: fraction of (valid) peaks to mask.
-        mask_mz: mask the m/z channel.
-        mask_intensity: mask the intensity channel.
+        mask_prob: fraction of peaks whose m/z is masked (∝ intensity).
+        series_span_fraction: share of m/z masks placed on consecutive homologous-series members.
+        replaced_fraction: fraction of peaks given a plausible-but-wrong m/z.
+        vocab: a :class:`~gems.vocab.vocabulary.DeltaVocabulary`, used to draw plausible replacement Δm.
     """
 
-    def __init__(self, base: Dataset, mask_prob: float = 0.15,
-                 mask_mz: bool = True, mask_intensity: bool = False):
+    def __init__(self, base: Dataset, mask_prob: float = DEFAULT_MASK_PROB,
+                 series_span_fraction: float = SERIES_SPAN_FRACTION,
+                 replaced_fraction: float = REPLACED_PEAK_FRACTION, vocab=None):
         self.base = base
         self.mask_prob = mask_prob
-        self.mask_mz = mask_mz
-        self.mask_intensity = mask_intensity
+        self.series_span_fraction = series_span_fraction
+        self.replaced_fraction = replaced_fraction
+        self.vocab = vocab
 
     def __len__(self) -> int:
         return len(self.base)
 
     def __getitem__(self, i: int) -> dict:
         raise NotImplementedError(
-            "MaskedPeakDataset.__getitem__ is a stub: draw a Bernoulli(mask_prob) mask over valid "
-            "peaks, blank the chosen m/z/intensity channels, and attach the targets + target mask."
+            "SpectrumDenoisingDataset.__getitem__ is a stub: draw the three disjoint corruption "
+            "subsets, blank m/z (keep intensity) / blank intensity (keep m/z) / replace m/z, record "
+            "nominal+defect+intensity targets and replaced_label, and the masked_nodes mask."
         )
 
 
-# ---- contrastive-invariance augmentations (SimCLR-style) -----------------------------------
+# ---- corruption primitives -----------------------------------------------------------------
 
-def subsample_peaks(spec: dict, frac: float, rng: np.random.Generator | None = None) -> dict:
-    """Randomly keep a fraction of peaks (robustness to peak-picking thresholds). [STUB]"""
-    raise NotImplementedError("subsample_peaks is a stub.")
-
-
-def jitter_intensity(spec: dict, sigma: float, rng: np.random.Generator | None = None) -> dict:
-    """Multiply intensities by lognormal noise (abundance-measurement jitter). [STUB]"""
-    raise NotImplementedError("jitter_intensity is a stub.")
+def intensity_weighted_mask(intensity: np.ndarray, frac: float,
+                            rng: np.random.Generator | None = None) -> np.ndarray:
+    """Sample a boolean mask over peaks, drawn ∝ intensity. [STUB]"""
+    raise NotImplementedError("intensity_weighted_mask is a stub.")
 
 
-def simulate_calibration_drift(spec: dict, ppm: float, rng: np.random.Generator | None = None) -> dict:
-    """Apply a small ppm-scaled m/z shift to mimic cross-instrument calibration drift. [STUB]
+def series_span_mask(mz: np.ndarray, n_spans: int, base: str = "C H2",
+                     rng: np.random.Generator | None = None) -> np.ndarray:
+    """Mask 2–3 *consecutive* members of a homologous (e.g. CH2) series. [STUB]
 
-    This is the key augmentation defending against the model shortcutting to acquisition signatures
-    rather than chemistry (see PROJECT_IDEA.md "Design flags for sample-class labels").
+    Forces the model to extrapolate a series and its defect progression rather than interpolate one
+    edge — where compositional reasoning forms.
     """
-    raise NotImplementedError("simulate_calibration_drift is a stub.")
+    raise NotImplementedError("series_span_mask is a stub (consecutive Kendrick/Δm-series members).")
 
 
-def contrastive_views(spec: dict, cfg) -> tuple[dict, dict]:
-    """Produce two augmented views of a spectrum for a SimCLR/contrastive loss. [STUB]"""
-    raise NotImplementedError("contrastive_views is a stub (compose the augmentations above).")
+def replace_with_implausible_mz(mz: np.ndarray, idx: np.ndarray, vocab=None,
+                                rng: np.random.Generator | None = None) -> np.ndarray:
+    """Shift selected peaks' m/z by a non-vocabulary Δm (or a defect-breaking one). [STUB]
+
+    The replaced-peak (Electra) corruption: the new mass is plausible in nominal terms but
+    chemically inconsistent with the rest of the mixture.
+    """
+    raise NotImplementedError("replace_with_implausible_mz is a stub.")

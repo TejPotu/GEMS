@@ -1,9 +1,11 @@
 """Transformer encoder with a pluggable attention bias. [STUB]
 
 A pre-norm transformer encoder (templated on DreaMS's ``tnq_transformer.py``) whose self-attention
-adds an :class:`~gems.models.layers.attention_bias.AttentionBias` to the QKᵀ logits before
-softmax. This is the single seam where Phase 1 (``NoBias``) and Phase 2 (``EdgeBias``/``SparseMask``)
-differ — the rest of the stack is identical.
+adds an :class:`~gems.models.layers.attention_bias.AttentionBias` to the QKᵀ logits before softmax.
+The attention bias is the single seam where the locked ``graph`` mechanism and the ``no_bias`` /
+``dense_edge_bias`` sanity checks differ — the rest of the stack is identical. The readout is
+**attention-pooling** over the final peak embeddings (no CLS master node, which would need edges to
+all peaks and break the Δm-graph sparsity).
 """
 
 from __future__ import annotations
@@ -48,12 +50,13 @@ class DeltaTransformerEncoder(nn.Module):
     Args:
         dim, n_layers, n_heads, ff_mult, dropout: standard transformer hyperparameters.
         attention_bias: shared/strategy bias module (same instance across layers, or per-layer).
-        pooling: 'cls' (prepend a learned token) or 'attention' (attention pooling).
+        pooling: 'attention' (attention pooling — the locked readout). 'cls' is intentionally not a
+            path here: a CLS master node would need edges to every peak and break Δm-graph sparsity.
     """
 
     def __init__(self, dim: int, n_layers: int, n_heads: int, ff_mult: int = 4,
                  dropout: float = 0.0, attention_bias: AttentionBias | None = None,
-                 pooling: str = "cls"):
+                 pooling: str = "attention"):
         super().__init__()
         self.dim = dim
         self.pooling = pooling
@@ -62,7 +65,7 @@ class DeltaTransformerEncoder(nn.Module):
             DeltaTransformerLayer(dim, n_heads, ff_mult, dropout, attention_bias)
             for _ in range(n_layers)
         )
-        # TODO[STUB]: CLS parameter / attention-pooling head per `pooling`.
+        # TODO[STUB]: attention-pooling head (learned query over final peak embeddings).
 
     def forward(self, x: torch.Tensor, delta_edges=None, key_padding_mask=None):
         """Return (peak_embeddings (B,N,dim), pooled_embedding (B,dim)). [STUB]"""

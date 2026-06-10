@@ -1,0 +1,13 @@
+# Sanity floor: plain transformer (no Δm bias), top-N peaks — the bar the locked `graph` attention
+# must beat. If denoising on top of this already matches the KMD/van-Krevelen baseline, the
+# Δm-attention mechanism is not earning its keep.
+defaults:
+  - data: fticr_dev
+  - model: tiny
+  - attention: no_bias
+  - peak_selection: top_n
+  - pretrain: denoising
+
+seed: 0
+device: cpu
+run_name: sanity_no_bias

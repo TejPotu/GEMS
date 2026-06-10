@@ -1,0 +1,19 @@
+# The single locked pre-training objective: spectrum denoising / repair (BUILD_PLAN Part B).
+# ℒ = ℒ_mz + λ_int·ℒ_int + λ_rpd·ℒ_rpd over ONE shared corrupted view (encoder runs once).
+objective: denoising
+mask_prob: 0.30               # m/z masks per spectrum, sampled ∝ intensity
+series_span_fraction: 0.3333  # share of masks on 2–3 *consecutive* homologous-series members
+replaced_fraction: 0.15       # peaks given a plausible-but-wrong m/z (Electra-style)
+lambda_int: 0.2               # weight of the masked-intensity channel (λ_int)
+lambda_rpd: 0.5               # weight of the replaced-peak channel (λ_rpd)
+batch_size: 4
+optim:
+  lr: 3.0e-4
+  warmup: 100
+  weight_decay: 0.01
+trainer:
+  accelerator: cpu            # cpu | mps | gpu  (bf16-mixed + gradient checkpointing at scale-up)
+  devices: 1
+  precision: 32
+  max_steps: 1000
+  log_every_n_steps: 10

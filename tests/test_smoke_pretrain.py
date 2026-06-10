@@ -22,7 +22,7 @@ def test_one_masked_peak_step():
     from gems.training.config import load_config
 
     cfg = load_config(
-        "configs/experiment/phase1_baseline.yaml",
+        "configs/experiment/gems_pretrain.yaml",
         overrides=["model.dim=32", "pretrain.batch_size=1", "pretrain.trainer.max_steps=1"],
     )
     dm = PretrainDataModule(cfg)

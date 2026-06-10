@@ -1,0 +1,12 @@
+# Sanity check: dense edge bias (no sparsity), reduced N — isolates "does the abundance-weighted
+# bias help?" from "does the sparse Δm-graph help?". Not the primary path.
+defaults:
+  - data: fticr_dev
+  - model: tiny
+  - attention: dense_edge_bias
+  - peak_selection: graph_induced
+  - pretrain: denoising
+
+seed: 0
+device: cpu
+run_name: sanity_dense_edge_bias

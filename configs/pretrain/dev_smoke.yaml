@@ -1,9 +1,10 @@
-# Minimal 1-step CPU smoke configuration (overrides applied at the experiment level).
-objectives: [masked_peak]
-mask_prob: 0.15
-mask_mz: true
-mask_intensity: false
-predict: defect
+# Minimal 1-step CPU smoke configuration for the locked denoising objective.
+objective: denoising
+mask_prob: 0.30
+series_span_fraction: 0.3333
+replaced_fraction: 0.15
+lambda_int: 0.2
+lambda_rpd: 0.5
 batch_size: 1
 optim:
   lr: 3.0e-4

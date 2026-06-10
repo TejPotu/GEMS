@@ -4,8 +4,8 @@ Subcommands (some bodies are stubs that raise NotImplementedError with guidance)
 
     gems build-vocab  --mds_dir data/mds_csv               --out data/processed/vocab.json
     gems build-corpus --pks_dir data/walking_calibrated_pks --out data/processed/dev.h5
-    gems pretrain     --config configs/experiment/phase1_baseline.yaml
-    gems finetune     --config configs/experiment/finetune_sample_classification.yaml
+    gems pretrain     --config configs/experiment/gems_pretrain.yaml
+    gems finetune     --config configs/finetune/sample_classification.yaml
     gems embed        --pks path/to.pks                    --out emb.npy
     gems smoke                                              # CPU end-to-end skeleton check
 """
@@ -21,7 +21,7 @@ class CLI:
 
     def build_vocab(self, mds_dir: str, out: str, seed: bool = True, top_k: int = 128):
         """Build the building-block Δm vocabulary from the corpus MDS CSVs. [STUB body]"""
-        from gems.vocab.building_blocks import build_vocabulary_from_corpus
+        from gems.vocab.vocabulary import build_vocabulary_from_corpus
         vocab = build_vocabulary_from_corpus(mds_dir, seed=seed, top_k=top_k)
         vocab.to_json(out)
         return out
@@ -57,7 +57,7 @@ class CLI:
         stubs are filled in (per the build order). Prints exactly where the skeleton stops.
         """
         from gems.data.peaklist import load_record
-        from gems.vocab.building_blocks import DeltaVocabulary
+        from gems.vocab.vocabulary import DeltaVocabulary
 
         files = sorted(glob.glob(str(Path(pks_dir) / "*.pks")))
         if not files:
@@ -70,7 +70,7 @@ class CLI:
         print(f"[smoke] seed vocabulary: {len(vocab)} blocks -> {vocab.names}")
 
         print("[smoke] concrete data + vocab path OK. Next steps are stubs (see build order):")
-        print("        peak_tokenizer → transformer → masked-peak objective → GEMS.training_step.")
+        print("        Δm graph → peak_tokenizer → transformer → denoising objective → GEMS.training_step.")
         print("[smoke] To complete the smoke test, fill in those stubs and wire GEMS + datamodule.")
         return "ok-concrete-path"
 

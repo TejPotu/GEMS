@@ -7,11 +7,15 @@ Each resolved peak is a token; the abundant pairwise mass differences in a spect
 **attention bias**, so peaks linked by an abundant building-block Δm attend to one another. The
 model outputs per-peak contextual embeddings plus a pooled whole-spectrum embedding.
 
-> **Honest novelty framing.** The *mechanism* (Graphormer edge-bias attention over pairwise Δm)
-> is adapted from [DreaMS](https://github.com/pluskal-lab/DreaMS), not invented here. The defensible
-> contribution is the **domain + setting**: FT-ICR / complex mixtures, MS1-only (no fragmentation),
-> an abundance-weighted mixture-specific building-block vocabulary, a repository-scale corpus, and a
-> new downstream benchmark. See `PROJECT_IDEA.md` for the full spec.
+> **Honest novelty framing.** The *mechanism* (attention biased by pairwise Δm) is adapted from
+> [DreaMS](https://github.com/pluskal-lab/DreaMS), not invented here. The defensible contribution is
+> the **domain + setting** plus two FT-ICR-specific commitments: attention that is **sparse over the
+> Δm graph *and* abundance-weighted** (each edge carries its Δm type *and* that Δm's per-spectrum
+> abundance as the bias), and a pre-training **leakage guard** (edges incident to a masked peak are
+> stripped to a `[masked-edge]` sentinel so a typed edge can't reveal the masked mass). The rest:
+> MS1-only (no fragmentation), a mixture-specific learnable building-block vocabulary, a
+> repository-scale corpus, and a new downstream benchmark. See `BUILD_PLAN.md` for the locked design
+> and `PROJECT_IDEA.md` for the original spec.
 
 ## Status: SKELETON
 
@@ -65,30 +69,38 @@ GPU later: swap in the CUDA torch wheel (`pip install torch --index-url …/whl/
 gems/
   definitions.py            # canonical schema / constants / registry
   api.py  cli.py            # inference surface + fire CLI
-  data/                     # pyc2mc-backed IO, formats, peak selection, masking, datamodules
-  vocab/                    # building-block Δm vocabulary + per-spectrum Δm graph
+  data/                     # pyc2mc-backed IO, formats, graph-induced peak selection, masking, datamodules
+  vocab/                    # vocabulary.py (building-block Δm vocab) + graph.py (per-spectrum Δm graph)
   models/
     layers/                 # fourier_features, peak_tokenizer, feed_forward, transformer, attention_bias
-    objectives/             # masked-peak / intensity / contrastive / elution-order SSL
-    heads/                  # frozen-backbone fine-tuning heads
-    gems/gems.py    # the main LightningModule
+    objectives/             # spectrum-denoising channels: masked_mz, masked_intensity, replaced_peak → denoising
+    heads/                  # frozen-backbone downstream heads
+    gems/gems.py            # the main LightningModule
   baselines/                # KMD/van-Krevelen + GBM (the non-deep bar to beat)
   training/  eval/  utils/
 ```
 
-## Phased plan (`PROJECT_IDEA.md`)
+## Locked design (`BUILD_PLAN.md`)
 
-| Phase | Goal | Selected by |
-|---|---|---|
-| 0 | Data + preprocessing pipeline; Δm vocabulary | `gems build-corpus` / `build-vocab` |
-| 1 | Baseline: plain transformer, masked-peak pretraining, **no Δm bias** | `attention: no_bias` |
-| 2 | Add mass-difference attention; ablate edge-bias vs sparse-mask, seeded vs learned vocab | `attention: edge_bias` / `sparse_mask` |
-| 3 | Scale corpus; add contrastive + LC-ordering objectives | `pretrain: multitask` |
-| 4 | Downstream eval suite vs baselines | `gems` finetune + `eval/benchmark.py` |
-| 5 | Wire embedding into formula-assignment assist / Analysis Companion | `api.py` |
+One committed design, not a phased table. The commitments:
 
-**Phase 1 → 2 is a config flag** (`configs/attention/*.yaml`) over a swappable `AttentionBias`
-strategy — the critical ablation needs no structural change.
+- **Graph-induced peak selection** — a peak is a token iff it sits on ≥1 abundant Δm edge (no Top-N stage).
+- **Sparse, abundance-weighted Δm-graph attention** — `A_ij = (qᵢ·kⱼ)/√d + b(Δm_type, log_abund)` for
+  graph-linked pairs, −∞ otherwise. Mask *and* edge bias come from the same edge set.
+- **One pre-training objective: spectrum denoising / repair** — corrupt the peak set three ways over a
+  single shared view and reconstruct: `ℒ = ℒ_mz + λ_int·ℒ_int + λ_rpd·ℒ_rpd` (masked m/z with nominal +
+  defect classification heads, masked intensity, Electra-style replaced-peak detection).
+- **Attention-pool readout** (no CLS master node, which would break Δm-graph sparsity).
+- **Leakage guard** — masked peaks' incident edges are stripped to the `[masked-edge]` sentinel.
+
+Everything else — edge-type/Kendrick probes, sample classification, class-distribution regression,
+formula disambiguation, similarity, elution-order — is **downstream** on the pretrained encoder.
+
+The locked run is `configs/experiment/gems_pretrain.yaml`. Two config-switchable **sanity checks** (not
+milestones) live beside it: `sanity_no_bias.yaml` (plain transformer — the floor the Δm attention must
+beat) and `sanity_dense_edge_bias.yaml` (dense edge bias, reduced N — isolates bias-helps from
+sparsity-helps). The attention mechanism is a swappable `AttentionBias` strategy
+(`configs/attention/{graph,no_bias,dense_edge_bias}.yaml`), so the sanity checks need no structural change.
 
 ## Quickstart / dev smoke test (CPU)
 
@@ -97,19 +109,22 @@ Once the stubs in the [build order](#build-order) are filled in:
 ```bash
 gems build-vocab  --mds_dir data/mds_csv               --out data/processed/vocab.json
 gems build-corpus --pks_dir data/walking_calibrated_pks --out data/processed/dev.h5 --limit 8
-gems smoke        # read .pks → tokenize → tiny transformer → one masked-peak step on CPU
+gems smoke        # read .pks → Δm graph → tokenize → tiny transformer → one denoising step on CPU
 pytest -q
 ```
 
 ## Build order
 
-Fill in stubs in this order to reach the end-to-end CPU smoke test:
-`definitions.py` → `data/peaklist.py` → `utils/chem.py` (ppm helpers) → `data/peak_selection.py`
-(TopN) → `data/dformats.py` → `models/layers/peak_tokenizer.py` → `models/layers/attention_bias.py`
-(NoBias) → `models/layers/transformer.py` → `models/objectives` (MaskedPeak) + `data/masking.py` →
-`data/ms_data.py` + `data/datamodule.py` → `models/gems/gems.py` →
-`training/{train,config}.py` + `cli.py smoke` → `tests/test_smoke_pretrain.py`. Phase-2
-(`vocab/*`, `EdgeBias`/`SparseMask`) then plugs in via the `attention` config.
+Fill in stubs in this order to reach the end-to-end CPU smoke test (BUILD_PLAN Part C):
+`vocab/vocabulary.py` (corpus aggregation + `match`) → `vocab/graph.py` (Δm graph + degree cap +
+leakage guard) → `data/peak_selection.py` (graph-induced) → `models/layers/fourier_features.py` +
+`peak_tokenizer.py` (nominal+defect) → `models/layers/attention_bias.py` (`GraphDeltaBias`) →
+`models/layers/transformer.py` (sparse encoder + attention-pool) → `models/objectives/*`
+(`masked_mz` nominal+defect, `masked_intensity`, `replaced_peak`, composed by `denoising`) +
+`data/masking.py` → `data/ms_data.py` + `data/datamodule.py` → `models/gems/gems.py` →
+`training/{train,config}.py` + `cli.py smoke` → `tests/test_smoke_pretrain.py`. **Measure first:** run
+`vocab/graph.py` over the corpus and print the degree distribution before fixing `k` / `d` / `L` / batch.
+The `no_bias` and `dense_edge_bias` sanity checks then plug in via the `attention` config.
 
 ## Lineage
 

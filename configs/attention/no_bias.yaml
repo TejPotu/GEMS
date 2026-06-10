@@ -1,2 +1,2 @@
-# Phase 1 baseline: plain transformer, NO mass-difference bias.
+# Performance floor: plain transformer, NO mass-difference bias (the bar `graph` must beat).
 variant: no_bias

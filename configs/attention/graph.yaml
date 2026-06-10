@@ -1,0 +1,13 @@
+# Locked attention (BUILD_PLAN A3): sparse Δm-graph mask + abundance-weighted per-block edge bias.
+#   A_ij = (q·k)/√d + b(Δm_type, log_abund)   for graph-linked pairs, −∞ otherwise.
+variant: graph
+n_heads: 2                  # must match model.n_heads (per-head bias)
+ppm_tol: 1.0                # ppm-scaled Δm match window
+degree_cap: 32              # keep top-k edges/node by Δm abundance (the linear-cost knob, k)
+include_c13: true           # 13C spacing (1.00336) as its own block — learn to use or down-weight
+use_abundance_weight: true  # scale the learned per-block bias by the Δm's corpus abundance (the novelty)
+allow_self: true
+vocab:
+  source: seeded            # seeded | corpus | seeded+corpus
+  learnable: true
+  top_k: 128

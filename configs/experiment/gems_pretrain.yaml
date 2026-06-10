@@ -1,0 +1,12 @@
+# GEMS — the locked committed design (BUILD_PLAN). Graph-induced selection, sparse Δm-graph attention
+# with abundance-weighted edge bias, single spectrum-denoising objective. No phases.
+defaults:
+  - data: fticr_dev
+  - model: tiny
+  - attention: graph
+  - peak_selection: graph_induced
+  - pretrain: denoising
+
+seed: 0
+device: cpu            # cpu | mps | cuda
+run_name: gems_pretrain

@@ -7,4 +7,4 @@ dropout: 0.0
 max_nominal: 2000        # nominal-mass embedding vocabulary size
 use_fourier: false       # false -> LSM1 nominal+defect tokenization; true -> DreaMS Fourier features
 aux_features: []         # e.g. ["kmd", "dbe", "oc", "hc"] (computed via pyc2mc)
-pooling: cls             # cls | attention
+pooling: attention       # locked readout (attention-pool over peak embeddings; no CLS master node)

@@ -1,2 +1,3 @@
+# Sanity-check floor (NOT the locked path): keep the n most abundant peaks.
 strategy: top_n
-n_peaks: 256        # cap on tokens fed into O(n^2) attention
+n_peaks: 256        # cap on tokens fed into attention

@@ -2,10 +2,12 @@
 
 A ``LightningModule`` that ties the stack together:
 
-    PeakTokenizer → DeltaTransformerEncoder (swappable AttentionBias) → {per-peak, pooled} embeddings
+    PeakTokenizer → DeltaTransformerEncoder (GraphDeltaBias) → {per-peak, attention-pooled} embeddings
 
-and multi-tasks the self-supervised objectives during pretraining. Mirrors DreaMS's main module.
-The Phase 1 ↔ 2 distinction lives entirely in the ``AttentionBias`` chosen by config.
+and trains the single self-supervised denoising objective during pre-training
+(``ℒ = ℒ_mz + λ_int·ℒ_int + λ_rpd·ℒ_rpd``). Mirrors DreaMS's main module, but the readout is
+**attention-pooling** over the final peak embeddings (no CLS master node — a CLS would need edges to
+all peaks, breaking the Δm-graph sparsity).
 """
 
 from __future__ import annotations
@@ -15,16 +17,17 @@ import pytorch_lightning as pl
 from gems.models.layers.attention_bias import build_attention_bias
 from gems.models.layers.peak_tokenizer import PeakTokenizer
 from gems.models.layers.transformer import DeltaTransformerEncoder
-from gems.models.objectives.pretrain_objectives import build_objectives
+from gems.models.objectives.denoising import build_denoising_objective
 
 
 class GEMS(pl.LightningModule):
     """FT-ICR mass-difference transformer encoder. [STUB]
 
     Args:
-        cfg: composed config (model dims, attention variant, pretrain objectives, optimizer).
-        vocab: a :class:`~gems.vocab.building_blocks.DeltaVocabulary` (supplies block count for
-            the edge-bias variant); may be None for the ``no_bias`` baseline.
+        cfg: composed config (model dims, attention variant, denoising objective, optimizer).
+        vocab: a :class:`~gems.vocab.vocabulary.DeltaVocabulary` (supplies the block count, incl. the
+            masked-edge sentinel, for the ``graph`` / ``dense_edge_bias`` variants); may be None for
+            the ``no_bias`` floor.
     """
 
     def __init__(self, cfg, vocab=None):
@@ -50,10 +53,12 @@ class GEMS(pl.LightningModule):
             ff_mult=m.get("ff_mult", 4),
             dropout=m.get("dropout", 0.0),
             attention_bias=attn_bias,
-            pooling=m.get("pooling", "cls"),
+            pooling=m.get("pooling", "attention"),
         )
-        self.objectives = build_objectives(
-            cfg["pretrain"] if isinstance(cfg, dict) else cfg.pretrain, dim=dim
+        data_cfg = (cfg["data"] if isinstance(cfg, dict) else cfg.data)
+        max_mz = (data_cfg.get("max_mz", 1500.0) if isinstance(data_cfg, dict) else getattr(data_cfg, "max_mz", 1500.0))
+        self.objective = build_denoising_objective(
+            cfg["pretrain"] if isinstance(cfg, dict) else cfg.pretrain, dim=dim, max_mz=max_mz
         )
 
     # ---- forward / inference -------------------------------------------------------------
@@ -69,10 +74,10 @@ class GEMS(pl.LightningModule):
 
     # ---- training ------------------------------------------------------------------------
     def training_step(self, batch: dict, batch_idx: int):
-        """Sum every objective's losses, log them, return the total. [STUB]"""
+        """One encoder pass → denoising loss (ℒ_mz + λ_int·ℒ_int + λ_rpd·ℒ_rpd); log and return total. [STUB]"""
         raise NotImplementedError(
-            "GEMS.training_step is a stub: out = self(batch); total = sum over "
-            "obj.loss(batch, out) for obj in self.objectives; log and return total."
+            "GEMS.training_step is a stub: out = self(batch); losses = self.objective.loss(batch, out); "
+            "log each; return losses['total']."
         )
 
     def validation_step(self, batch: dict, batch_idx: int):

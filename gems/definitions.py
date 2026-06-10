@@ -140,11 +140,34 @@ SEED_BUILDING_BLOCKS: dict[str, float] = _compute_seed_masses()
 # Matching tolerances and data-format defaults
 # --------------------------------------------------------------------------------------
 DEFAULT_PPM_TOLERANCE = 1.0         # ppm-scaled window for Δm ↔ building-block matching
-DEV_MAX_PEAKS = 256                 # CPU dev default (cap peaks fed into O(n^2) attention)
+DEV_MAX_PEAKS = 256                 # CPU dev default (cap peaks fed into sparse Δm-graph attention)
 FULL_MAX_PEAKS = 2048               # scale-up default
 DEFAULT_MIN_PEAKS = 32
 DEFAULT_MAX_MZ = 1500.0
 DEFAULT_DELTA_MZ_BOUNDS = (0.5, 50.0)  # passed to pyc2mc MassDifferencesSpectrum
+
+# --------------------------------------------------------------------------------------
+# Δm-graph construction (BUILD_PLAN A2/A3 — locked)
+# --------------------------------------------------------------------------------------
+# Selection is graph-induced: a peak is a node iff it sits on >=1 abundant Δm edge (no Top-N stage).
+DEFAULT_DEGREE_CAP = 32             # keep top-k edges/node by Δm abundance — the linear-cost knob (k)
+# Leakage guard (the FT-ICR fix over DreaMS): edges incident to a *masked* peak keep their
+# connectivity but have their Δm-type id + abundance stripped to this sentinel embedding, so a typed
+# edge can never hand the model the masked mass. It occupies a reserved row past the real blocks.
+MASKED_EDGE_TOKEN = "[masked-edge]"
+
+# --------------------------------------------------------------------------------------
+# Pre-training objective — spectrum denoising / repair (BUILD_PLAN Part B — locked, single objective)
+# --------------------------------------------------------------------------------------
+# ℒ = ℒ_mz + λ_int·ℒ_int + λ_rpd·ℒ_rpd  over ONE shared corrupted view.
+DEFAULT_MASK_PROB = 0.30            # fraction of nodes masked per spectrum, sampled ∝ intensity
+SERIES_SPAN_FRACTION = 1.0 / 3.0   # share of masks that are 2–3 *consecutive* homologous-series members
+REPLACED_PEAK_FRACTION = 0.15      # fraction of peaks given a plausible-but-wrong m/z (Electra-style)
+LAMBDA_INT = 0.2                   # weight of the masked-intensity channel (λ_int)
+LAMBDA_RPD = 0.5                   # weight of the replaced-peak channel (λ_rpd)
+# Masked-m/z is reconstructed by TWO classification heads (not regression): nominal mass + defect.
+NOMINAL_MASS_BIN_DA = 1.0          # integer-Da bins for the nominal-mass softmax
+DEFECT_BIN_WIDTH_DA = 1.0e-4       # ~0.1 mDa defect bins over [0,1) Da (~10k classes) for the defect head
 
 # --------------------------------------------------------------------------------------
 # Heteroatom classes (for the whole-sample class-distribution regression task)

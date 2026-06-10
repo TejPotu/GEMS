@@ -1,0 +1,6 @@
+# Locked (BUILD_PLAN decision #1): graph-induced selection — a peak is a token iff it sits on
+# >=1 abundant Δm edge. No standalone Top-N stage; the Δm graph itself decides which peaks matter.
+strategy: graph_induced
+n_peaks: 256        # safety cap on tokens; the degree cap usually keeps the node set well under this
+ppm_tol: 1.0
+degree_cap: 32      # top-k edges/node by abundance (shared with the graph build)
