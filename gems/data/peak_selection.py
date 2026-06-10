@@ -59,10 +59,9 @@ class TopNAbundance:
     """
 
     def select(self, spec: SpectrumRecord, n: int) -> np.ndarray:
-        raise NotImplementedError(
-            "TopNAbundance.select is a stub: take argsort of spec.intensity (descending), "
-            "keep the top n, return indices sorted by m/z."
-        )
+        intensity = np.asarray(spec.intensity)
+        keep = np.argsort(intensity)[::-1][:n]                 # top-n by intensity (descending)
+        return keep[np.argsort(np.asarray(spec.mz)[keep])]     # return sorted by m/z
 
 
 # Registry for config-driven dispatch. [CONCRETE]

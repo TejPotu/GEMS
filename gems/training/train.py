@@ -21,11 +21,33 @@ def pretrain(config: str, overrides: list[str] | None = None):
         trainer = pl.Trainer(accelerator=cfg.device, devices=..., max_steps=cfg.pretrain.trainer.max_steps, ...)
         trainer.fit(model, dm)
     """
-    cfg = load_config(config, overrides)  # concrete: prove config composition works
-    raise NotImplementedError(
-        "pretrain is a stub. Build vocab → PretrainDataModule → GEMS → pl.Trainer.fit. "
-        f"(Loaded config keys: {list(cfg.keys())})"
+    import pytorch_lightning as pl
+
+    from gems.data.datamodule import PretrainDataModule
+    from gems.models.gems.gems import GEMS
+    from gems.vocab.vocabulary import DeltaVocabulary
+
+    cfg = load_config(config, overrides)
+
+    attention = cfg.get("attention")
+    variant = attention.get("variant", "graph")
+    # vocab supplies the edge-bias block table; the no_bias floor needs none.
+    vocab = None if variant == "no_bias" else DeltaVocabulary.from_seeds(
+        include_c13=bool(attention.get("include_c13", True)))
+
+    dm = PretrainDataModule(cfg, vocab=vocab)
+    model = GEMS(cfg, vocab=vocab)
+
+    tcfg = cfg.get("pretrain").get("trainer", {})
+    trainer = pl.Trainer(
+        accelerator=cfg.get("device", "cpu"),
+        devices=tcfg.get("devices", 1),
+        max_steps=tcfg.get("max_steps", 1000),
+        precision=tcfg.get("precision", 32),
+        log_every_n_steps=tcfg.get("log_every_n_steps", 10),
     )
+    trainer.fit(model, dm)
+    return trainer
 
 
 def finetune(config: str, overrides: list[str] | None = None):

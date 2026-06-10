@@ -43,23 +43,20 @@ class SpectrumDenoising(PretrainObjective):
         self.replaced_peak = ReplacedPeakDetection(dim)         # ℒ_rpd
 
     def loss(self, batch: dict, encoder_out: dict) -> dict[str, torch.Tensor]:
-        """Run every channel over the shared encoder pass and combine. [STUB]
+        """Run every channel over the shared encoder pass and combine. [CONCRETE]
 
-        Intended (once the channel heads are implemented)::
-
-            losses = {}
-            losses |= self.masked_mz.loss(batch, encoder_out)            # mz_nominal, mz_defect
-            losses |= self.masked_intensity.loss(batch, encoder_out)     # intensity
-            losses |= self.replaced_peak.loss(batch, encoder_out)        # replaced
-            total = (losses['mz_nominal'] + losses['mz_defect']
-                     + self.lambda_int * losses['intensity']
-                     + self.lambda_rpd * losses['replaced'])
-            return {**losses, 'total': total}
+        ``ℒ = ℒ_mz + λ_int·ℒ_int + λ_rpd·ℒ_rpd`` with ``ℒ_mz = ℒ_nominal + ℒ_defect``.
         """
-        raise NotImplementedError(
-            "SpectrumDenoising.loss is a stub: sum masked_mz + λ_int·masked_intensity + "
-            "λ_rpd·replaced_peak over the single shared encoder pass into {'...': ..., 'total': ...}."
+        losses: dict[str, torch.Tensor] = {}
+        losses.update(self.masked_mz.loss(batch, encoder_out))           # mz_nominal, mz_defect
+        losses.update(self.masked_intensity.loss(batch, encoder_out))    # intensity
+        losses.update(self.replaced_peak.loss(batch, encoder_out))       # replaced
+        losses["total"] = (
+            losses["mz_nominal"] + losses["mz_defect"]
+            + self.lambda_int * losses["intensity"]
+            + self.lambda_rpd * losses["replaced"]
         )
+        return losses
 
 
 def build_denoising_objective(cfg, dim: int, max_mz: float = 1500.0) -> SpectrumDenoising:

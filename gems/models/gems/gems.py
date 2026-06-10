@@ -13,6 +13,7 @@ all peaks, breaking the Δm-graph sparsity).
 from __future__ import annotations
 
 import pytorch_lightning as pl
+import torch
 
 from gems.models.layers.attention_bias import build_attention_bias
 from gems.models.layers.peak_tokenizer import PeakTokenizer
@@ -63,29 +64,43 @@ class GEMS(pl.LightningModule):
 
     # ---- forward / inference -------------------------------------------------------------
     def forward(self, batch: dict) -> dict:
-        """Encode a batch → {'peak_emb': (B,N,dim), 'pooled_emb': (B,dim)}. [STUB]"""
-        raise NotImplementedError(
-            "GEMS.forward is a stub: tokenizer(mz,intensity,aux) → encoder(x, delta_edges, mask)."
+        """Encode a batch → {'peak_emb': (B,N,dim), 'pooled_emb': (B,dim)}. [CONCRETE]"""
+        x = self.tokenizer(batch["mz"], batch["intensity"])
+        key_padding_mask = ~batch["valid_mask"]  # True == padding
+        peak_emb, pooled = self.encoder(
+            x, delta_edges=batch.get("delta_edges"), key_padding_mask=key_padding_mask
         )
+        return {"peak_emb": peak_emb, "pooled_emb": pooled}
 
     def embed(self, batch: dict) -> dict:
-        """Inference-only forward (no grad); returns peak + pooled embeddings. [STUB]"""
-        raise NotImplementedError("GEMS.embed is a stub.")
+        """Inference-only forward (no grad); returns peak + pooled embeddings. [CONCRETE]"""
+        self.eval()
+        with torch.no_grad():
+            return self(batch)
 
     # ---- training ------------------------------------------------------------------------
+    def _step(self, batch: dict, stage: str):
+        out = self(batch)
+        losses = self.objective.loss(batch, out)
+        bs = int(batch["mz"].shape[0])
+        for name, val in losses.items():
+            self.log(f"{stage}/{name}", val, on_step=(stage == "train"),
+                     on_epoch=(stage == "val"), prog_bar=(name == "total"), batch_size=bs)
+        return losses["total"]
+
     def training_step(self, batch: dict, batch_idx: int):
-        """One encoder pass → denoising loss (ℒ_mz + λ_int·ℒ_int + λ_rpd·ℒ_rpd); log and return total. [STUB]"""
-        raise NotImplementedError(
-            "GEMS.training_step is a stub: out = self(batch); losses = self.objective.loss(batch, out); "
-            "log each; return losses['total']."
-        )
+        """One encoder pass → denoising loss (ℒ_mz + λ_int·ℒ_int + λ_rpd·ℒ_rpd); log and return total."""
+        return self._step(batch, "train")
 
     def validation_step(self, batch: dict, batch_idx: int):
-        raise NotImplementedError("GEMS.validation_step is a stub.")
+        return self._step(batch, "val")
 
     def configure_optimizers(self):
-        """AdamW + linear warmup / cosine decay (read from cfg). [STUB]"""
-        raise NotImplementedError("GEMS.configure_optimizers is a stub.")
+        """AdamW from cfg.pretrain.optim. (Warmup + cosine decay is a later refinement.)"""
+        optim = self.cfg.get("pretrain").get("optim")
+        lr = float(optim.get("lr", 3e-4))
+        weight_decay = float(optim.get("weight_decay", 0.0))
+        return torch.optim.AdamW(self.parameters(), lr=lr, weight_decay=weight_decay)
 
     # ---- (de)serialization ---------------------------------------------------------------
     @classmethod

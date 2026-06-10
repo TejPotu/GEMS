@@ -38,30 +38,50 @@ class DataFormat:
     pad_value: float = 0.0
 
     def normalize_intensity(self, intensity: np.ndarray) -> np.ndarray:
-        """Log1p (optional) + relative-abundance normalization. [STUB]
-
-        TODO: ``x = np.log1p(intensity) if log_intensity else intensity``; divide by max (or sum).
-        """
-        raise NotImplementedError("DataFormat.normalize_intensity is a stub.")
+        """Log1p (optional) + relative-abundance normalization to [0, 1]. [CONCRETE]"""
+        x = np.asarray(intensity, dtype=np.float64)
+        if self.log_intensity:
+            x = np.log1p(np.clip(x, 0.0, None))
+        peak = x.max() if x.size else 0.0
+        return (x / peak) if peak > 0 else np.zeros_like(x)
 
     def trim(self, spec: SpectrumRecord, selector) -> np.ndarray:
-        """Apply m/z cutoff then delegate to ``selector`` to choose ≤ max_peaks indices. [STUB]
-
-        TODO: mask peaks with mz > max_mz, then ``selector.select(spec, self.max_peaks)``.
-        """
-        raise NotImplementedError("DataFormat.trim is a stub (delegates to peak_selection).")
+        """Apply the m/z cutoff then delegate to ``selector`` for ≤ max_peaks indices. [CONCRETE]"""
+        idx = selector.select(spec, self.max_peaks)
+        mz = np.asarray(spec.mz)[idx]
+        idx = idx[mz <= self.max_mz]
+        return idx[: self.max_peaks]
 
     def pad(self, arr: np.ndarray) -> np.ndarray:
-        """Right-pad/truncate the first axis to ``max_peaks`` with ``pad_value``. [STUB]"""
-        raise NotImplementedError("DataFormat.pad is a stub.")
+        """Right-pad/truncate the first axis to ``max_peaks`` with ``pad_value``. [CONCRETE]"""
+        arr = np.asarray(arr)
+        n = arr.shape[0]
+        if n >= self.max_peaks:
+            return arr[: self.max_peaks]
+        pad_width = [(0, self.max_peaks - n)] + [(0, 0)] * (arr.ndim - 1)
+        return np.pad(arr, pad_width, constant_values=self.pad_value)
 
     def __call__(self, spec: SpectrumRecord, selector) -> dict:
-        """Full pipeline: validate min_peaks → normalize → trim → pad → return tensors dict. [STUB]
+        """Full pipeline: validate min_peaks → trim → normalize → pad → fixed-size array dict. [CONCRETE]
 
-        Returns a dict of fixed-length arrays: ``{mz, intensity, mask, ...}`` plus the kept indices,
-        suitable for collation into a batch.
+        Returns ``{mz, intensity, valid_mask}`` of length ``max_peaks`` (float32 / bool).
+        ``intensity`` is normalized over the *kept* peaks. ``valid_mask`` is True for real peaks.
         """
-        raise NotImplementedError("DataFormat.__call__ is a stub (normalize→trim→pad pipeline).")
+        if len(spec) < self.min_peaks:
+            raise ValueError(f"spectrum has {len(spec)} peaks (< min_peaks={self.min_peaks})")
+
+        idx = self.trim(spec, selector)
+        n = int(idx.shape[0])
+        mz = np.asarray(spec.mz, dtype=np.float64)[idx]
+        intensity = self.normalize_intensity(np.asarray(spec.intensity)[idx])
+
+        valid = np.zeros(self.max_peaks, dtype=bool)
+        valid[:n] = True
+        return {
+            "mz": self.pad(mz).astype(np.float32),
+            "intensity": self.pad(intensity).astype(np.float32),
+            "valid_mask": valid,
+        }
 
 
 # Convenient presets.

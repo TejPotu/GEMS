@@ -1,24 +1,25 @@
-"""Replaced-peak detection — ℒ_rpd, Electra-style (BUILD_PLAN B3). [STUB]
+"""Replaced-peak detection — ℒ_rpd, Electra-style (BUILD_PLAN B3). [CONCRETE]
 
-On a third subset (default 15% of peaks), **replace** each selected peak's m/z with a
-*plausible-but-wrong* value — shift by a non-vocabulary Δm, or by a vocabulary Δm that breaks defect
-consistency — keeping intensity. A binary head then classifies **every** peak real/fake (BCE).
+On a third subset (default 15% of peaks), each selected peak's m/z is **replaced** with a
+plausible-but-wrong value (keeping intensity). A binary head then classifies every *genuine-or-replaced*
+peak real/fake (BCE). It forces learning which masses are chemically consistent with the rest of the
+mixture — a global, label-free signal — and produces signal on far more peaks than masking alone.
 
-Two reasons it earns its place: (a) it forces learning which masses are **chemically consistent with
-the rest of the mixture** — a global, label-free signal, not local arithmetic; (b) it produces a
-training signal on **100% of peaks** (vs ~30% for masking), which matters a lot on a 272-sample
-corpus. Weight λ_rpd = 0.5 default.
+Peaks corrupted by the *other* channels (m/z-masked, intensity-masked) are excluded from this head's
+loss: their corruption is a different mechanism, and a blanked m/z is not what "fake" should mean here.
 """
 
 from __future__ import annotations
 
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 from gems.models.objectives.base import PretrainObjective
 
 
 class ReplacedPeakDetection(PretrainObjective):
-    """Binary real/fake head over every peak (Electra-style discriminator). [STUB]
+    """Binary real/fake head over every (non-masked) valid peak. [CONCRETE]
 
     Args:
         dim: encoder output dimension.
@@ -27,11 +28,13 @@ class ReplacedPeakDetection(PretrainObjective):
     def __init__(self, dim: int):
         super().__init__()
         self.dim = dim
-        # TODO[STUB]: classifier head dim -> 1 (logit per peak).
+        self.head = nn.Linear(dim, 1)
 
     def loss(self, batch: dict, encoder_out: dict) -> dict[str, torch.Tensor]:
-        raise NotImplementedError(
-            "ReplacedPeakDetection.loss is a stub: run the per-peak binary head over ALL peak "
-            "embeddings, BCE-with-logits against batch['replaced_label'] (1=replaced), masking "
-            "padding, return {'replaced': ...}."
-        )
+        emb = encoder_out["peak_emb"]
+        logits = self.head(emb).squeeze(-1)  # (B, N)
+        eval_mask = batch["valid_mask"] & ~batch["mz_mask"] & ~batch["int_mask"]
+        if eval_mask.sum() == 0:
+            return {"replaced": emb.sum() * 0.0}
+        return {"replaced": F.binary_cross_entropy_with_logits(
+            logits[eval_mask], batch["replaced_label"][eval_mask])}
