@@ -1,5 +1,10 @@
 # Notebooks
 
+- **code_tour.ipynb** — traces one real spectrum through every pipeline stage (read → vocab → dformat →
+  Δm graph → corruption → collate → tokenizer → attention mask → encoder → objective → one GEMS
+  forward/backward), printing shapes and visualizing the Δm graph, degree distribution, and sparse
+  attention mask. Start here to learn the codebase; run top to bottom (needs `pyc2mc` + the corpus).
+
 Exploratory notebooks (placeholders — create as `.ipynb` when you start the corresponding work):
 
 - **01_explore_pks** — load `.pks` via `gems.data.peaklist.load_record`; plot m/z vs intensity,
