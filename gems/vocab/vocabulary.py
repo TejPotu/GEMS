@@ -81,14 +81,21 @@ class DeltaVocabulary:
         return self._index[name]
 
     def match(self, delta_m: float, ppm: float | None = None) -> str | None:
-        """Return the block name whose mass matches ``delta_m`` within a ppm window, else None. [STUB]
+        """Return the block name whose mass matches ``delta_m`` within a ppm window, else None. [CONCRETE]
 
-        Intended: ppm window scales with the Δm magnitude (``tol_da = mass * ppm * 1e-6``); on
-        multiple matches, pick the nearest. ``include_c13`` is handled by including the "C13" block.
-
-        TODO: implement using ``utils.chem.matches_building_block`` / ``ppm_window``.
+        The window scales with each block's mass (``|err_ppm| <= ppm``); on multiple matches the
+        nearest (smallest ppm error) wins. ``"C13"`` participates iff it is in the vocabulary.
         """
-        raise NotImplementedError("DeltaVocabulary.match is a stub (ppm-windowed nearest block).")
+        ppm = self.ppm_tol if ppm is None else ppm
+        best, best_err = None, float("inf")
+        for name in self._names:
+            mass = self.masses[name]
+            if mass <= 0:
+                continue
+            err = abs((delta_m - mass) / mass * 1e6)
+            if err <= ppm and err < best_err:
+                best, best_err = name, err
+        return best
 
     # ---- persistence (concrete) ----------------------------------------------------------
     def to_json(self, path: str | Path) -> None:

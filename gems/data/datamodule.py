@@ -20,9 +20,27 @@ from gems.data.splits import random_split
 
 
 def collate_spectra(batch: list[dict]) -> dict:
-    """Collate fixed-size spectrum dicts into a padded batch by stacking each key. [CONCRETE]"""
-    keys = batch[0].keys()
-    return {k: torch.stack([b[k] for b in batch], dim=0) for k in keys}
+    """Collate fixed-size spectrum dicts into a padded batch. [CONCRETE]
+
+    Fixed-size keys are stacked into (B, N) tensors. The ragged per-spectrum Δm edges (the
+    ``edge_*`` keys, present only when a vocab is attached) are concatenated into a single batched
+    ``delta_edges`` dict with a ``batch_idx`` selector — the form the attention bias consumes.
+    """
+    fixed = [k for k in batch[0] if not k.startswith("edge_")]
+    out = {k: torch.stack([b[k] for b in batch], dim=0) for k in fixed}
+
+    if "edge_src" in batch[0]:
+        batch_idx = torch.cat([
+            torch.full((b["edge_src"].numel(),), i, dtype=torch.long) for i, b in enumerate(batch)
+        ])
+        out["delta_edges"] = {
+            "batch_idx": batch_idx,
+            "src": torch.cat([b["edge_src"] for b in batch]),
+            "dst": torch.cat([b["edge_dst"] for b in batch]),
+            "block_idx": torch.cat([b["edge_block"] for b in batch]),
+            "weight": torch.cat([b["edge_weight"] for b in batch]),
+        }
+    return out
 
 
 class PretrainDataModule(pl.LightningDataModule):
@@ -56,6 +74,7 @@ class PretrainDataModule(pl.LightningDataModule):
         if self.vocab is not None:
             corpus.attach_delta_vocab(self.vocab)
 
+        attention = self.cfg.get("attention", {})
         base = corpus.to_torch_dataset(transform=lambda rec: dformat(rec, selector))
         denoise = SpectrumDenoisingDataset(
             base,
@@ -63,6 +82,8 @@ class PretrainDataModule(pl.LightningDataModule):
             replaced_fraction=float(pre.get("replaced_fraction", 0.15)),
             vocab=self.vocab,
             seed=seed,
+            ppm_tol=float(attention.get("ppm_tol", 1.0)) if attention is not None else 1.0,
+            degree_cap=int(attention.get("degree_cap", 32)) if attention is not None else 32,
         )
 
         splits = data.get("splits", {})

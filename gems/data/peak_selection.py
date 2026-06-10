@@ -39,16 +39,38 @@ class GraphInduced:
         degree_cap: top-k edges per node by abundance (the linear-cost knob).
     """
 
-    def __init__(self, vocab=None, ppm_tol: float | None = None, degree_cap: int | None = None):
+    def __init__(self, vocab=None, ppm_tol: float | None = None, degree_cap: int | None = None,
+                 pool_mult: int = 8, pool_cap: int = 2048):
+        if vocab is None:
+            raise ValueError("GraphInduced selection requires a DeltaVocabulary (got vocab=None).")
         self.vocab = vocab
         self.ppm_tol = ppm_tol
         self.degree_cap = degree_cap
+        self.pool_mult = pool_mult     # candidate pool = top (pool_mult * n) abundant peaks
+        self.pool_cap = pool_cap       # hard cap on the pool so the dense graph build stays tractable
 
     def select(self, spec: SpectrumRecord, n: int) -> np.ndarray:
-        raise NotImplementedError(
-            "GraphInduced.select is a stub: build_delta_graph(spec.mz, vocab, ppm_tol, degree_cap) "
-            "→ keep DeltaEdges.node_mask() peaks (cap to n by abundance), return indices sorted by m/z."
+        from gems.definitions import DEFAULT_DEGREE_CAP, DEFAULT_PPM_TOLERANCE
+        from gems.vocab.graph import build_delta_graph
+
+        mz = np.asarray(spec.mz)
+        intensity = np.asarray(spec.intensity)
+
+        # Candidate pool: the most abundant peaks, so the O(pool^2) graph build stays tractable.
+        # (The scale-up path runs the graph over all peaks via a sorted-window / pyc2mc construction.)
+        pool_size = min(mz.shape[0], min(self.pool_cap, max(n * self.pool_mult, n)))
+        pool = np.argsort(intensity)[::-1][:pool_size]
+        pool = pool[np.argsort(mz[pool])]                      # order pool by m/z
+
+        edges = build_delta_graph(
+            mz[pool], self.vocab,
+            ppm_tol=self.ppm_tol if self.ppm_tol is not None else DEFAULT_PPM_TOLERANCE,
+            degree_cap=self.degree_cap if self.degree_cap is not None else DEFAULT_DEGREE_CAP,
         )
+        kept = pool[edges.node_mask()]                          # peaks sitting on >=1 Δm edge
+        if kept.shape[0] > n:                                   # too many → keep most abundant
+            kept = kept[np.argsort(intensity[kept])[::-1][:n]]
+        return kept[np.argsort(mz[kept])]                       # return sorted by m/z
 
 
 class TopNAbundance:

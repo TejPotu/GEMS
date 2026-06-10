@@ -7,8 +7,6 @@ the graph stubs (``build_delta_graph``, ``GraphInduced.select``, ``GraphDeltaBia
 
 from __future__ import annotations
 
-import pytest
-
 from tests.conftest import requires_pyc2mc
 
 SMOKE_OVERRIDES = [
@@ -45,18 +43,26 @@ def test_one_denoising_step_no_bias():
 
 
 @requires_pyc2mc
-@pytest.mark.xfail(reason="locked graph path: Δm-graph stubs land in Pass 2", strict=False)
 def test_one_denoising_step_graph():
+    """Locked design: sparse Δm-graph attention + abundance-weighted bias + leakage guard."""
     import pytorch_lightning as pl
+    import torch
 
     from gems.data.datamodule import PretrainDataModule
     from gems.models.gems.gems import GEMS
     from gems.training.config import load_config
+    from gems.vocab.vocabulary import DeltaVocabulary
 
     cfg = load_config("configs/experiment/gems_pretrain.yaml", overrides=SMOKE_OVERRIDES)
-    vocab = None
+    vocab = DeltaVocabulary.from_seeds(include_c13=True)
     dm = PretrainDataModule(cfg, vocab=vocab)
     model = GEMS(cfg, vocab=vocab)
     trainer = pl.Trainer(accelerator="cpu", devices=1, max_steps=1, logger=False,
                          enable_checkpointing=False, num_sanity_val_steps=0)
     trainer.fit(model, dm)
+    assert trainer.state.finished
+
+    batch = next(iter(dm.train_dataloader()))
+    assert "delta_edges" in batch and batch["delta_edges"]["src"].numel() > 0  # graph actually built
+    losses = model.objective.loss(batch, model(batch))
+    assert torch.isfinite(losses["total"]), losses

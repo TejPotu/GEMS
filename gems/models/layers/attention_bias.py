@@ -24,6 +24,26 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+NEG_INF = float("-inf")
+
+
+def _edge_bias(bias_table: torch.Tensor, edges: dict, use_weight: bool,
+               b: int, h: int, n: int, dtype, device) -> torch.Tensor:
+    """Scatter the per-edge learned bias into a dense (B, H, N, N) tensor (symmetric)."""
+    src = edges["src"].to(device).long()
+    dst = edges["dst"].to(device).long()
+    out = torch.zeros(b, h, n, n, dtype=dtype, device=device)
+    if src.numel() == 0:
+        return out
+    batch = edges["batch_idx"].to(device).long()
+    vals = bias_table.to(device)[edges["block_idx"].to(device).long()]  # (E, H)
+    if use_weight:
+        vals = vals * edges["weight"].to(device).unsqueeze(-1)
+    vals = vals.to(dtype)
+    out[batch, :, src, dst] = vals
+    out[batch, :, dst, src] = vals
+    return out
+
 
 class AttentionBias(nn.Module):
     """Base strategy: given QKᵀ logits and a Δm graph, return modified logits."""
@@ -70,11 +90,27 @@ class GraphDeltaBias(AttentionBias):
         self.bias = nn.Parameter(torch.zeros(n_blocks, n_heads))  # learned per-block, per-head (+sentinel)
 
     def forward(self, logits: torch.Tensor, delta_edges, n_peaks: int) -> torch.Tensor:
-        raise NotImplementedError(
-            "GraphDeltaBias.forward is a stub: set non-edge logits to -inf (keep diagonal if "
-            "allow_self), then scatter self.bias[delta_edges.block_idx] (× weight if "
-            "use_abundance_weight) onto the surviving edge logits."
-        )
+        if delta_edges is None:        # no graph attached → behave like a plain transformer
+            return logits
+        b, h, n, _ = logits.shape
+        device = logits.device
+        src = delta_edges["src"].to(device).long()
+        dst = delta_edges["dst"].to(device).long()
+        batch = delta_edges["batch_idx"].to(device).long()
+
+        # connectivity mask: keep edge pairs (both directions) + the diagonal; −∞ elsewhere.
+        mask = torch.zeros(b, n, n, dtype=torch.bool, device=device)
+        if src.numel():
+            mask[batch, src, dst] = True
+            mask[batch, dst, src] = True
+        if self.allow_self:
+            diag = torch.arange(n, device=device)
+            mask[:, diag, diag] = True
+        logits = logits.masked_fill(~mask.unsqueeze(1), NEG_INF)
+
+        bias = _edge_bias(self.bias, delta_edges, self.use_abundance_weight,
+                          b, h, n, logits.dtype, device)
+        return logits + bias
 
 
 class DenseEdgeBias(AttentionBias):
@@ -98,11 +134,12 @@ class DenseEdgeBias(AttentionBias):
         self.bias = nn.Parameter(torch.zeros(n_blocks, n_heads))
 
     def forward(self, logits: torch.Tensor, delta_edges, n_peaks: int) -> torch.Tensor:
-        raise NotImplementedError(
-            "DenseEdgeBias.forward is a stub: scatter self.bias[delta_edges.block_idx] (× weight if "
-            "use_abundance_weight) into a dense (heads, n_peaks, n_peaks) bias and add to logits "
-            "(no -inf masking)."
-        )
+        if delta_edges is None:
+            return logits
+        b, h, n, _ = logits.shape
+        bias = _edge_bias(self.bias, delta_edges, self.use_abundance_weight,
+                          b, h, n, logits.dtype, logits.device)
+        return logits + bias  # dense: bias added everywhere, NO −∞ masking
 
 
 # Registry for config-driven dispatch. [CONCRETE]

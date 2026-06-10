@@ -1,23 +1,24 @@
-"""Per-spectrum Δm graph (``vocab/graph.py``) — peak list → attention bias. [STUB]
+"""Per-spectrum Δm graph (``vocab/graph.py``) — peak list → attention bias. [CONCRETE]
 
 For one spectrum, find peak pairs (i, j) whose mass difference matches a building block within a
 ppm window, and tag each edge with the block index and that block's abundance weight. The result
 (:class:`DeltaEdges`) drives both halves of the locked attention (BUILD_PLAN A3): it is the
-connectivity **mask** *and* the source of the abundance-weighted **edge bias** — the same edge set
-encodes "which Δm" and "how abundant".
+connectivity **mask** *and* the source of the abundance-weighted **edge bias**.
 
 Two graph-level commitments from the plan live here:
   - **Degree cap** ``k`` (default :data:`gems.definitions.DEFAULT_DEGREE_CAP`): keep only the top-k
-    edges per node by Δm abundance, which is what guarantees linear (not O(n^2)) attention cost.
-  - **Graph-induced selection**: the node set is *induced* by the edges — a peak is a token iff it
-    sits on >=1 abundant edge (see :mod:`gems.data.peak_selection`). There is no Top-N stage.
+    edges per node by Δm abundance — what bounds attention cost.
+  - **Graph-induced selection**: the node set is *induced* by the edges (see
+    :mod:`gems.data.peak_selection`).
 
-This can reuse pyc2mc's pairwise machinery (``MassDifferencesCompute``) to avoid a naive O(n^2)
-Python loop; at FT-ICR scale the sparse construction is mandatory, not optional.
+This builds the candidate pairs densely (upper triangle), which is fine after peak selection has
+capped the token count. A sorted-window / pyc2mc ``MassDifferencesCompute`` construction is the
+scale-up optimization (it avoids materializing the full O(n^2) triangle).
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 import numpy as np
@@ -28,7 +29,7 @@ from gems.vocab.vocabulary import DeltaVocabulary
 
 @dataclass
 class DeltaEdges:
-    """Sparse Δm-graph for one spectrum.
+    """Sparse Δm-graph for one spectrum (undirected; each edge stored once with ``src < dst``).
 
     Attributes:
         src, dst: paired peak indices (int arrays), one entry per matched edge.
@@ -45,50 +46,54 @@ class DeltaEdges:
     n_peaks: int
 
     def node_mask(self) -> np.ndarray:
-        """Boolean (n_peaks,) — True for peaks that sit on >=1 edge. [STUB]
-
-        The basis for graph-induced peak selection: a peak is a node iff it is incident to an edge.
-        """
-        raise NotImplementedError("DeltaEdges.node_mask is a stub (peaks touched by any edge).")
+        """Boolean (n_peaks,) — True for peaks that sit on >=1 edge. [CONCRETE]"""
+        m = np.zeros(self.n_peaks, dtype=bool)
+        m[self.src] = True
+        m[self.dst] = True
+        return m
 
     def with_masked_edges(self, masked_nodes: np.ndarray, masked_edge_index: int) -> "DeltaEdges":
-        """Apply the pre-training leakage guard (BUILD_PLAN A2/B1). [STUB]
+        """Apply the pre-training leakage guard (BUILD_PLAN A2/B1). [CONCRETE]
 
-        Return a copy where every edge incident to a peak in ``masked_nodes`` keeps its
-        (src, dst) connectivity but has its ``block_idx`` rewritten to ``masked_edge_index`` and its
-        ``weight`` zeroed — so the masked node still aggregates from neighbors, but a typed edge can
-        never reveal *which* building block (hence the masked mass) links them. Edges between two
-        unmasked peaks are unchanged.
-
-        Args:
-            masked_nodes: boolean (n_peaks,) or int index array of masked peaks.
-            masked_edge_index: the sentinel block id (``vocab.masked_edge_index``).
+        Every edge incident to a masked peak keeps its (src, dst) connectivity but has its
+        ``block_idx`` rewritten to ``masked_edge_index`` and its ``weight`` zeroed — so the masked
+        node still aggregates from neighbors, but a typed edge can never reveal *which* building block
+        (hence the masked mass) links them.
         """
-        raise NotImplementedError(
-            "DeltaEdges.with_masked_edges is a stub: strip block_idx→sentinel and weight→0 on every "
-            "edge touching a masked peak; leave unmasked-unmasked edges intact."
-        )
+        masked = np.asarray(masked_nodes)
+        if masked.dtype != bool:
+            tmp = np.zeros(self.n_peaks, dtype=bool)
+            tmp[masked] = True
+            masked = tmp
+        incident = masked[self.src] | masked[self.dst]
+        block_idx = self.block_idx.copy()
+        weight = self.weight.copy()
+        block_idx[incident] = masked_edge_index
+        weight[incident] = 0.0
+        return DeltaEdges(self.src.copy(), self.dst.copy(), block_idx, weight, self.n_peaks)
 
     def to_dense_bias(self, n_heads: int):
         """Materialize an (n_heads, n_peaks, n_peaks) additive bias tensor. [STUB]
 
-        For the reduced-N ``dense_edge_bias`` sanity check only. Sparse → dense; feasible just for
-        small ``n_peaks``. The learned per-block, per-head bias is added by the attention module.
+        Not needed by the attention modules (they scatter the per-edge bias directly); kept as a
+        future convenience for the reduced-N ``dense_edge_bias`` debugging path.
         """
-        raise NotImplementedError("DeltaEdges.to_dense_bias is a stub.")
+        raise NotImplementedError("DeltaEdges.to_dense_bias is unused (attention scatters directly).")
 
-    def to_sparse_mask(self):
-        """Return a sparse boolean connectivity mask (n_peaks, n_peaks). [STUB]
-
-        For the locked ``graph`` attention: True where peaks are linked by a building-block Δm
-        (plus the diagonal). Non-edges are masked out before softmax.
-        """
-        raise NotImplementedError("DeltaEdges.to_sparse_mask is a stub.")
+    def to_sparse_mask(self) -> np.ndarray:
+        """Return a boolean connectivity mask (n_peaks, n_peaks), incl. the diagonal. [CONCRETE]"""
+        mask = np.zeros((self.n_peaks, self.n_peaks), dtype=bool)
+        mask[self.src, self.dst] = True
+        mask[self.dst, self.src] = True
+        np.fill_diagonal(mask, True)
+        return mask
 
 
 def pairwise_delta_m(mz: np.ndarray) -> np.ndarray:
-    """Upper-triangular pairwise |m_i - m_j| (or a sparse edge list at scale). [STUB]"""
-    raise NotImplementedError("pairwise_delta_m is a stub (use pyc2mc MassDifferencesCompute at scale).")
+    """Upper-triangular pairwise |m_i - m_j| as a flat array (i<j). [CONCRETE]"""
+    mz = np.asarray(mz, dtype=np.float64)
+    iu, ju = np.triu_indices(mz.shape[0], k=1)
+    return np.abs(mz[ju] - mz[iu])
 
 
 def build_delta_graph(
@@ -98,14 +103,56 @@ def build_delta_graph(
     degree_cap: int = DEFAULT_DEGREE_CAP,
     include_c13: bool = True,
 ) -> DeltaEdges:
-    """Build the Δm edge set for one spectrum's peaks. [STUB]
+    """Build the Δm edge set for one spectrum's peaks. [CONCRETE]
 
-    Intended: for each candidate peak pair, compute Δm; if it matches a vocabulary block within the
-    ppm window (``vocab.match``), emit an edge tagged with that block's index and abundance weight.
-    Then apply the **degree cap**: keep only the top ``degree_cap`` edges per node by abundance
-    weight (the linear-cost knob). Drop or flag ¹³C edges per ``include_c13``.
+    For each peak pair, match Δm against the vocabulary within a ppm window (nearest block wins),
+    tag the edge with the block index + abundance weight, then keep the top ``degree_cap`` edges per
+    node by weight (union over endpoints, so connectivity is preserved).
     """
-    raise NotImplementedError(
-        "build_delta_graph is a stub: match pairwise Δm against vocab within ppm_tol, tag with "
-        "block index + abundance weight, cap to top-`degree_cap` edges/node → DeltaEdges."
-    )
+    mz = np.asarray(mz, dtype=np.float64)
+    n = mz.shape[0]
+    if n < 2:
+        e = np.array([], dtype=int)
+        return DeltaEdges(e, e, e, np.array([], dtype=float), n)
+
+    iu, ju = np.triu_indices(n, k=1)
+    d = np.abs(mz[ju] - mz[iu])
+
+    names = [nm for nm in vocab.names if include_c13 or nm != "C13"]
+    masses = {nm: vocab.masses[nm] for nm in names}
+    max_mass = max(masses.values())
+    within = d <= max_mass * (1.0 + ppm_tol * 1e-6) + 1e-9   # prune impossible pairs early
+    iu, ju, d = iu[within], ju[within], d[within]
+
+    block_idx = np.full(d.shape[0], -1, dtype=int)
+    weight = np.zeros(d.shape[0], dtype=np.float64)
+    for nm in names:                      # blocks are sub-ppm separated → first match is the match
+        m = masses[nm]
+        half = m * ppm_tol * 1e-6
+        sel = (block_idx < 0) & (d >= m - half) & (d <= m + half)
+        if sel.any():
+            block_idx[sel] = vocab.index_of(nm)
+            weight[sel] = float(vocab.weights.get(nm, 0.0))
+
+    keep = block_idx >= 0
+    src, dst = iu[keep].astype(int), ju[keep].astype(int)
+    block_idx, weight = block_idx[keep], weight[keep]
+
+    if degree_cap and degree_cap > 0 and src.size:
+        src, dst, block_idx, weight = _apply_degree_cap(src, dst, block_idx, weight, degree_cap)
+
+    return DeltaEdges(src, dst, block_idx, weight, n)
+
+
+def _apply_degree_cap(src, dst, block_idx, weight, degree_cap):
+    """Keep an edge if it ranks in the top-``degree_cap`` (by weight) of *either* endpoint."""
+    incident: dict[int, list[int]] = defaultdict(list)
+    for e in range(src.shape[0]):
+        incident[int(src[e])].append(e)
+        incident[int(dst[e])].append(e)
+
+    keep = np.zeros(src.shape[0], dtype=bool)
+    for edges in incident.values():
+        top = sorted(edges, key=lambda e: weight[e], reverse=True)[:degree_cap]
+        keep[top] = True
+    return src[keep], dst[keep], block_idx[keep], weight[keep]

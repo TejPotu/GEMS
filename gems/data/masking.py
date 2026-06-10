@@ -21,7 +21,9 @@ import torch
 from torch.utils.data import Dataset
 
 from gems.definitions import (
+    DEFAULT_DEGREE_CAP,
     DEFAULT_MASK_PROB,
+    DEFAULT_PPM_TOLERANCE,
     REPLACED_PEAK_FRACTION,
     SERIES_SPAN_FRACTION,
 )
@@ -47,7 +49,8 @@ class SpectrumDenoisingDataset(Dataset):
     def __init__(self, base: Dataset, mask_prob: float = DEFAULT_MASK_PROB,
                  int_mask_prob: float = 0.15,
                  series_span_fraction: float = SERIES_SPAN_FRACTION,
-                 replaced_fraction: float = REPLACED_PEAK_FRACTION, vocab=None, seed: int = 0):
+                 replaced_fraction: float = REPLACED_PEAK_FRACTION, vocab=None, seed: int = 0,
+                 ppm_tol: float = DEFAULT_PPM_TOLERANCE, degree_cap: int = DEFAULT_DEGREE_CAP):
         self.base = base
         self.mask_prob = mask_prob
         self.int_mask_prob = int_mask_prob
@@ -55,6 +58,8 @@ class SpectrumDenoisingDataset(Dataset):
         self.replaced_fraction = replaced_fraction
         self.vocab = vocab
         self.seed = seed
+        self.ppm_tol = ppm_tol
+        self.degree_cap = degree_cap
 
     def __len__(self) -> int:
         return len(self.base)
@@ -80,7 +85,7 @@ class SpectrumDenoisingDataset(Dataset):
 
         replaced_label = replaced_mask.astype(np.float32)
 
-        return {
+        out = {
             "mz": torch.from_numpy(mz),
             "intensity": torch.from_numpy(intensity),
             "mz_target": torch.from_numpy(mz0),
@@ -89,7 +94,31 @@ class SpectrumDenoisingDataset(Dataset):
             "int_mask": torch.from_numpy(int_mask),
             "valid_mask": torch.from_numpy(valid),
             "replaced_label": torch.from_numpy(replaced_label),
-            "masked_nodes": torch.from_numpy(mz_mask),       # leakage-guard input (Pass 2)
+            "masked_nodes": torch.from_numpy(mz_mask),       # leakage-guard input
+        }
+        if self.vocab is not None:
+            out.update(self._build_edges(mz0, valid, mz_mask))
+        return out
+
+    def _build_edges(self, mz0: np.ndarray, valid: np.ndarray, mz_mask: np.ndarray) -> dict:
+        """Δm graph over the *original* selected m/z (valid peaks only), with the leakage guard. [CONCRETE]
+
+        Built on uncorrupted masses so the connectivity reflects the true mixture; the masked peaks'
+        incident edges are then stripped to the ``[masked-edge]`` sentinel so a typed edge can't leak
+        the masked mass. Padding peaks (invalid) carry sentinel m/z 0 and would form spurious edges,
+        so they are excluded by passing them a non-matching mass.
+        """
+        from gems.vocab.graph import build_delta_graph
+
+        mz = mz0.astype(np.float64).copy()
+        mz[~valid] = -1.0e6  # push padding far away so it matches no building block
+        edges = build_delta_graph(mz, self.vocab, ppm_tol=self.ppm_tol, degree_cap=self.degree_cap)
+        edges = edges.with_masked_edges(mz_mask, self.vocab.masked_edge_index)
+        return {
+            "edge_src": torch.as_tensor(edges.src, dtype=torch.long),
+            "edge_dst": torch.as_tensor(edges.dst, dtype=torch.long),
+            "edge_block": torch.as_tensor(edges.block_idx, dtype=torch.long),
+            "edge_weight": torch.as_tensor(edges.weight, dtype=torch.float32),
         }
 
 
