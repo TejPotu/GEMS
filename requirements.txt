@@ -1,0 +1,32 @@
+# GEMS runtime dependencies — mirrors [project.dependencies] in pyproject.toml.
+#
+# Install:   pip install -r requirements.txt
+# (Equivalent to `pip install -e .`; for tooling use `pip install -e ".[dev]"`.)
+#
+# IMPORTANT — pyc2mc is NOT listed below. The .pks reader + chemistry backend is not on PyPI, so
+# pinning it here would make this file fail to install. Install it separately, editable, FIRST:
+#     pip install -e /Users/tejapotu/School/Projects/Maglab/pyc2mc
+# pyc2mc constrains numpy<2.0 / pydantic==2.4.2 / dask==2024.11.2; the versions below respect that
+# (torch 2.2–2.3 + lightning are compatible with numpy<2.0).
+
+numpy<2.0
+pandas>=2.0
+scipy>=1.10
+scikit-learn>=1.0
+h5py>=3.8
+omegaconf>=2.3
+fire>=0.5
+tqdm>=4.65
+torch>=2.2,<2.4
+pytorch-lightning>=2.0,<2.3
+torchmetrics>=1.0
+
+# --- Notebooks / dev tooling (optional) --------------------------------------------------
+# For notebooks/code_tour.ipynb plots and the test/lint stack. Uncomment, or `pip install -e ".[dev]"`.
+# matplotlib>=3.7
+# jupyter
+# ipykernel
+# pytest>=7.4
+# pytest-cov
+# ruff
+# black
